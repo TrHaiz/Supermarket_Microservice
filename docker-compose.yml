@@ -1,0 +1,109 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: supermarket-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  product-service:
+    build: ./services/product-service
+    env_file:
+      - .env
+    expose:
+      - "3001"
+    environment:
+      - MONGO_URI=${MONGO_URI_PRODUCTION}
+      - PORT=3001
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - REDIS_PRODUCT_TTL=${REDIS_PRODUCT_TTL:-60}
+    depends_on:
+      - redis
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  auth-service:
+    build: ./services/auth-service
+    env_file:
+      - .env
+    expose:
+      - "3002"
+    environment:
+      - MONGO_URI=${MONGO_URI_AUTH}
+      - PORT=3002
+      - JWT_SECRET=${JWT_SECRET:-supermarket-secret-key-change-in-production}
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  inventory-service:
+    build: ./services/inventory-service
+    env_file:
+      - .env
+    expose:
+      - "3003"
+    environment:
+      - MONGO_URI=${MONGO_URI_INVENTORY}
+      - PORT=3003
+      - PRODUCT_SERVICE_URL=http://product-service:3001
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  order-service:
+    build: ./services/order-service
+    env_file:
+      - .env
+    expose:
+      - "3004"
+    environment:
+      - MONGO_URI=${MONGO_URI_ORDER}
+      - PORT=3004
+      - PRODUCT_SERVICE_URL=http://product-service:3001
+      - INVENTORY_SERVICE_URL=http://inventory-service:3003
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  api-gateway:
+    build: ./api-gateway
+    expose:
+      - "3000"
+    environment:
+      - PORT=3000
+      - PRODUCT_SERVICE_URL=http://product-service:3001
+      - AUTH_SERVICE_URL=http://auth-service:3002
+      - INVENTORY_SERVICE_URL=http://inventory-service:3003
+      - ORDER_SERVICE_URL=http://order-service:3004
+      - JWT_SECRET=${JWT_SECRET:-supermarket-secret-key-change-in-production}
+      - RATE_LIMIT_WINDOW_MS=${RATE_LIMIT_WINDOW_MS:-60000}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+      - NODE_ENV=development
+    depends_on:
+      - product-service
+      - auth-service
+      - inventory-service
+      - order-service
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: supermarket-nginx
+    ports:
+      - "8088:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-gateway
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+
+networks:
+  supermarket-network:
+    driver: bridge
