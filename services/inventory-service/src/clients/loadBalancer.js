@@ -138,7 +138,7 @@ const requestWithLoadBalancer = async (
   const isIdempotent = method === 'GET';
 
   let attempts = 0;
-  const maxAttempts = isIdempotent ? 1 + retryCount : 1; // Strict: No retry for mutations
+  const maxAttempts = isIdempotent ? 1 + retryCount : 1;
 
   while (attempts < maxAttempts) {
     attempts++;
@@ -180,7 +180,7 @@ const requestWithLoadBalancer = async (
       unhealthyInstances.set(`${instance.ip}:${port}`, Date.now() + 10000);
 
       // Force refresh discovery cache to detect topology changes
-      refreshServiceInstances(serviceName).catch(() => {});
+      refreshServiceInstances(serviceName).catch(() => { });
 
       if (attempts >= maxAttempts) {
         if (isTimeout) {

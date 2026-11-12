@@ -53,11 +53,33 @@ app.use((req, res) => {
 // Connect DB then start server
 const start = async () => {
   await connectDB();
-  app.listen(PORT, () => {
+  let stopWorker;
+  if (process.env.ENABLE_ASYNC_ORDER === 'true') {
+    const { startOrderEventsWorker } = require('./workers/orderEventsWorker');
+    stopWorker = await startOrderEventsWorker();
+  }
+  const server = app.listen(PORT, () => {
     console.log(`Order Service running on port ${PORT}`);
   });
+  let stopping = false;
+  const stop = async () => {
+    if (stopping) return;
+    stopping = true;
+    const deadline = setTimeout(() => process.exit(1), 25000);
+    try {
+      await new Promise((resolve) => server.close(resolve));
+      if (stopWorker) await stopWorker();
+      await require('mongoose').disconnect();
+      clearTimeout(deadline);
+    } catch (error) {
+      console.error('Shutdown failed:', error.message);
+      process.exit(1);
+    }
+  };
+  process.once('SIGTERM', stop);
+  process.once('SIGINT', stop);
 };
 
-start();
+start().catch((error) => { console.error('Startup failed:', error.message); process.exit(1); });
 
 module.exports = app;

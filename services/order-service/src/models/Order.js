@@ -57,7 +57,9 @@ const orderSchema = new mongoose.Schema(
       type: [orderItemSchema],
       required: true,
       validate: {
-        validator: (v) => Array.isArray(v) && v.length > 0,
+        validator: function (v) {
+          return Array.isArray(v) && (v.length > 0 || this.status === 'FAILED');
+        },
         message: 'Order must have at least one item'
       }
     },
@@ -72,13 +74,30 @@ const orderSchema = new mongoose.Schema(
     status: {
       type: String,
       required: true,
-      enum: ['PENDING', 'COMPLETED', 'PARTIAL'],
+      enum: ['PENDING', 'COMPLETED', 'PARTIAL', 'FAILED'],
       default: 'PENDING'
+    },
+    asyncOrder: {
+      type: new mongoose.Schema({
+        published: { type: Boolean, default: false },
+        userId: { type: String, default: '' },
+        requestedItems: [orderItemSchema],
+        results: [mongoose.Schema.Types.Mixed]
+      }, { _id: false }),
+      default: undefined,
+      select: false
     }
   },
   {
-    timestamps: true
+    timestamps: true,
+    toJSON: { transform(doc, ret) { delete ret.asyncOrder; return ret; } }
   }
 );
+
+orderSchema.index({ 'asyncOrder.published': 1 }, {
+  partialFilterExpression: { 'asyncOrder.published': false }
+});
+orderSchema.index({ status: 1 });
+orderSchema.index({ _id: 1, status: 1 });
 
 module.exports = mongoose.model('Order', orderSchema);

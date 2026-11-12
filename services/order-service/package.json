@@ -4,10 +4,12 @@
   "description": "Order Service for Supermarket Backend",
   "main": "src/app.js",
   "scripts": {
+    "test": "node --test test/*.test.js",
     "start": "node src/app.js",
     "dev": "node --watch src/app.js"
   },
   "dependencies": {
+    "ioredis": "^5.4.1",
     "express": "^4.18.2",
     "mongoose": "^8.0.0",
     "cors": "^2.8.5",

@@ -1,12 +1,37 @@
 services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=secret
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - supermarket-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
-    container_name: supermarket-redis
+    command: [ "redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction" ]
+    volumes:
+      - redis_data:/data
     ports:
       - "6379:6379"
     networks:
       - supermarket-network
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   product-service:
     build: ./services/product-service
@@ -14,13 +39,18 @@ services:
       - .env
     expose:
       - "3001"
+    deploy:
+      replicas: 3
     environment:
       - MONGO_URI=${MONGO_URI_PRODUCTION}
       - PORT=3001
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - REDIS_PRODUCT_TTL=${REDIS_PRODUCT_TTL:-60}
     depends_on:
-      - redis
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - supermarket-network
     restart: unless-stopped
@@ -29,41 +59,75 @@ services:
     build: ./services/auth-service
     env_file:
       - .env
+    deploy:
+      replicas: 3
     expose:
       - "3002"
     environment:
       - MONGO_URI=${MONGO_URI_AUTH}
       - PORT=3002
       - JWT_SECRET=${JWT_SECRET:-supermarket-secret-key-change-in-production}
+    depends_on:
+      mongodb:
+        condition: service_healthy
     networks:
       - supermarket-network
     restart: unless-stopped
 
   inventory-service:
     build: ./services/inventory-service
-    env_file:
-      - .env
+    init: true
+    stop_grace_period: 30s
     expose:
       - "3003"
+    deploy:
+      replicas: 4
     environment:
-      - MONGO_URI=${MONGO_URI_INVENTORY}
+      - MONGO_URI_INVENTORY=${MONGO_URI_INVENTORY}
       - PORT=3003
       - PRODUCT_SERVICE_URL=http://product-service:3001
+      - PRODUCT_SERVICE_PORT=${PRODUCT_SERVICE_PORT:-3001}
+      - DISCOVERY_TTL_MS=${DISCOVERY_TTL_MS:-5000}
+      - ENABLE_ASYNC_ORDER=${ENABLE_ASYNC_ORDER:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - STREAM_BATCH_SIZE=${STREAM_BATCH_SIZE:-20}
+      - OUTBOX_BATCH_LIMIT=${OUTBOX_BATCH_LIMIT:-200}
+      - OUTBOX_POLL_INTERVAL_MS=${OUTBOX_POLL_INTERVAL_MS:-200}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - supermarket-network
     restart: unless-stopped
 
   order-service:
     build: ./services/order-service
-    env_file:
-      - .env
+    init: true
+    stop_grace_period: 30s
     expose:
       - "3004"
+    deploy:
+      replicas: 5
     environment:
-      - MONGO_URI=${MONGO_URI_ORDER}
+      - MONGO_URI_ORDER=${MONGO_URI_ORDER}
       - PORT=3004
       - PRODUCT_SERVICE_URL=http://product-service:3001
+      - PRODUCT_SERVICE_PORT=${PRODUCT_SERVICE_PORT:-3001}
+      - INVENTORY_SERVICE_PORT=${INVENTORY_SERVICE_PORT:-3003}
+      - DISCOVERY_TTL_MS=${DISCOVERY_TTL_MS:-5000}
       - INVENTORY_SERVICE_URL=http://inventory-service:3003
+      - ENABLE_ASYNC_ORDER=${ENABLE_ASYNC_ORDER:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - STREAM_BATCH_SIZE=${STREAM_BATCH_SIZE:-20}
+      - OUTBOX_BATCH_LIMIT=${OUTBOX_BATCH_LIMIT:-200}
+      - OUTBOX_POLL_INTERVAL_MS=${OUTBOX_POLL_INTERVAL_MS:-200}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - supermarket-network
     restart: unless-stopped
@@ -72,6 +136,8 @@ services:
     build: ./api-gateway
     expose:
       - "3000"
+    deploy:
+      replicas: 3
     environment:
       - PORT=3000
       - PRODUCT_SERVICE_URL=http://product-service:3001
@@ -93,7 +159,6 @@ services:
 
   nginx:
     image: nginx:alpine
-    container_name: supermarket-nginx
     ports:
       - "8088:80"
     volumes:
@@ -107,3 +172,7 @@ services:
 networks:
   supermarket-network:
     driver: bridge
+
+volumes:
+  mongo_data:
+  redis_data:

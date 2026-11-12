@@ -11,6 +11,10 @@ const validateOrder = (req, res, next) => {
     errors.push('items must have at least one item');
   } else {
     items.forEach((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        errors.push(`items[${index}] must be an object`);
+        return;
+      }
       // productId: required, non-empty string
       if (!item.productId || typeof item.productId !== 'string' || item.productId.trim().length === 0) {
         errors.push(`items[${index}].productId is required and must be a non-empty string`);
@@ -21,7 +25,7 @@ const validateOrder = (req, res, next) => {
         errors.push(`items[${index}].quantity is required`);
       } else if (typeof item.quantity !== 'number' || isNaN(item.quantity)) {
         errors.push(`items[${index}].quantity must be a number`);
-      } else if (!Number.isInteger(item.quantity)) {
+      } else if (!Number.isSafeInteger(item.quantity)) {
         errors.push(`items[${index}].quantity must be an integer`);
       } else if (item.quantity <= 0) {
         errors.push(`items[${index}].quantity must be greater than 0`);

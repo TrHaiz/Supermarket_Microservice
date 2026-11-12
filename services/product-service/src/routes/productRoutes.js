@@ -74,10 +74,14 @@ router.post('/', validateProduct, async (req, res, next) => {
   }
 });
 
-// GET /api/products — Get all products
+// GET /api/products — Get all products (default limit: 20)
 router.get('/', async (req, res, next) => {
   try {
-    const products = await Product.find().sort({ createdAt: -1 });
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const skip = (page - 1) * limit;
+
+    const products = await Product.find().sort({ createdAt: -1 }).skip(skip).limit(limit);
 
     res.json({
       success: true,
