@@ -8,12 +8,17 @@
     "dev": "node --watch src/app.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^8.0.0",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^2.4.3",
-    "jsonwebtoken": "^9.0.2",
     "cors": "^2.8.5",
+    "express": "^4.18.2",
     "helmet": "^7.1.0",
+    "ioredis": "^6.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.0.0",
     "morgan": "^1.10.0"
+  },
+  "allowScripts": {
+    "bcrypt@6.0.0": true
   }
 }

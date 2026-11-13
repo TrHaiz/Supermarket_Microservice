@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { getCache, setCache, delCache } = require('../config/redis');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supermarket-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
@@ -65,7 +66,9 @@ router.post('/register', async (req, res, next) => {
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
-
+    const safeUser = user.toJSON ? user.toJSON() : user;
+    await setCache(`user:${user._id}`, safeUser, 3600);
+    console.log(`[CACHE SET] user:${user._id}`);
     res.status(201).json({
       success: true,
       data: { user, token }
@@ -120,7 +123,9 @@ router.post('/login', async (req, res, next) => {
       JWT_SECRET,
       { expiresIn: JWT_EXPIRES_IN }
     );
-
+    const safeUser = user.toJSON ? user.toJSON() : user;
+    await setCache(`user:${user._id}`, safeUser, 3600);
+    console.log(`[CACHE SET] user:${user._id}`);
     res.json({
       success: true,
       data: { user, token }
@@ -147,6 +152,19 @@ router.get('/me', async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET);
 
+    const cacheKey = `user:${decoded.id}`;
+
+    // 1. Check Redis cache
+    const cachedUser = await getCache(cacheKey);
+    if (cachedUser) {
+      console.log(`[CACHE HIT] ${cacheKey}`);
+      return res.json({
+        success: true,
+        data: cachedUser
+      });
+    }
+    console.log(`[CACHE MISS] ${cacheKey}`);
+
     const user = await User.findById(decoded.id);
     if (!user) {
       return res.status(404).json({
@@ -157,6 +175,9 @@ router.get('/me', async (req, res, next) => {
         }
       });
     }
+    // 2. Save to Redis (TTL: 3600s = 1h)
+    const safeUser = user.toJSON ? user.toJSON() : user;
+    await setCache(`user:${user._id}`, safeUser, 3600);
 
     res.json({
       success: true,
